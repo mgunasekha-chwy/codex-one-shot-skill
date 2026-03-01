@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+import json, os, re, sys
+from pathlib import Path
+
+TEMPLATE = """# Work Packet: {repo}
+
+## Context
+- Jira: {jira_key}
+- Repo: {repo}
+- Branch: {branch}
+
+## Objective
+Implement the approved plan for this repo only.
+
+## Steps
+{steps}
+
+## Tests to run
+{tests}
+
+## Constraints
+- Only change this repo/worktree.
+- Keep commits small and logical.
+- Do not push or create a PR without asking for approval in this session.
+
+## Definition of done
+- Tests pass
+- PR opened and linked to Jira
+- Summary posted back (PR link, changes, test results, follow-ups)
+"""
+
+def bullet(lines):
+    if not lines:
+        return "- (none)"
+    return "\n".join([f"- {x}" for x in lines])
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: write_work_packets.py <plan_json_path> <out_dir>", file=sys.stderr)
+        sys.exit(2)
+
+    plan_path = Path(sys.argv[1])
+    out_dir = Path(sys.argv[2])
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    plan = json.loads(plan_path.read_text())
+    jira_key = plan.get("jira_key") or plan.get("issue") or "UNKNOWN"
+
+    repos = plan.get("repos", [])
+    if not repos:
+        raise SystemExit("Plan JSON has no repos[]")
+
+    for r in repos:
+        repo = r["name"]
+        branch = r.get("branch") or f"{jira_key}-{repo}".replace("/", "-")
+        steps = bullet(r.get("steps", []))
+        tests = bullet(r.get("tests", []))
+        content = TEMPLATE.format(
+            jira_key=jira_key,
+            repo=repo,
+            branch=branch,
+            steps=steps,
+            tests=tests
+        )
+        (out_dir / f"{repo.replace('/','-')}.md").write_text(content)
+
+if __name__ == "__main__":
+    main()
