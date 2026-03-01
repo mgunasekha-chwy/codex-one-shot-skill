@@ -18,6 +18,9 @@ Implement the approved plan for this repo only.
 ## Tests to run
 {tests}
 
+## Gradle note
+- Run Gradle tests in worktrees using `./.codex-gradle-test.sh` with the same args, for example: `./.codex-gradle-test.sh test --tests '*ProductServiceTest*'`
+
 ## Constraints
 - Only change this repo/worktree.
 - Keep commits small and logical.

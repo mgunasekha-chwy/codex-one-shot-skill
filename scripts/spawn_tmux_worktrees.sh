@@ -59,6 +59,9 @@ cd "{local_path}"
 git fetch origin
 git worktree add -B "{branch}" "{wt}" "origin/{base}" || (echo "worktree add failed"; exit 2)
 cd "{wt}"
+# Copy worktree-safe Gradle wrapper command for spawned workers
+cp "/Users/mgunasekha/.agents/skills/one-shot-this/scripts/codex-gradle-test.sh" ./.codex-gradle-test.sh
+chmod +x ./.codex-gradle-test.sh
 # Start interactive Codex with the packet as the initial prompt
 codex "$(cat "{packet}")"
 '""")
