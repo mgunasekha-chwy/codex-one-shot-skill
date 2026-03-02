@@ -41,6 +41,9 @@ STOP if not approved.
    - create a worktree per repo
    - open a tmux session with one pane per repo
    - start a Codex session in each pane, feeding it the repo’s packet
+3) After spawn succeeds, do not run extra tmux verification commands.
+4) Final response for this step must be a single instruction line:
+   - `tmux attach -t codex-<JIRA_KEY>`
 
 ## Worker rules (each spawned Codex session)
 - Operate only within its repo/worktree.

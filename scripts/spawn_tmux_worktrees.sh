@@ -15,23 +15,22 @@ require python3
 require codex
 
 # Read repos from plan.json (expects repos[].name and optional repos[].local_path and repos[].branch)
-REPOS_JSON="$(python3 - <<'PY'
+REPOS_JSON="$(python3 - "$PLAN_JSON" <<'PY'
 import json,sys
 p=json.load(open(sys.argv[1]))
 print(json.dumps(p["repos"]))
 PY
-"$PLAN_JSON")"
+)"
 
 SESSION="codex-${JIRA_KEY}"
 tmux has-session -t "$SESSION" 2>/dev/null && { echo "tmux session $SESSION already exists" >&2; exit 2; }
 
-# Helper: extract fields for repo i
-repo_count="$(python3 - <<'PY'
+repo_count="$(python3 - "$REPOS_JSON" <<'PY'
 import json,sys
 a=json.loads(sys.argv[1])
 print(len(a))
 PY
-"$REPOS_JSON")"
+)"
 
 if [[ "$repo_count" -lt 1 ]]; then
   echo "No repos in plan" >&2
@@ -59,24 +58,20 @@ cd "{local_path}"
 git fetch origin
 git worktree add -B "{branch}" "{wt}" "origin/{base}" || (echo "worktree add failed"; exit 2)
 cd "{wt}"
-# Copy worktree-safe Gradle wrapper command for spawned workers
 cp "/Users/mgunasekha/.agents/skills/one-shot-this/scripts/codex-gradle-test.sh" ./.codex-gradle-test.sh
 chmod +x ./.codex-gradle-test.sh
-# Start interactive Codex with the packet as the initial prompt
 codex "$(cat "{packet}")"
 '""")
 PY
 }
 
-# Create first pane
 first_cmd="$(pane_cmd_for_index 0)"
 tmux new-session -d -s "$SESSION" "$first_cmd"
 
-# Remaining panes
 for ((i=1; i<repo_count; i++)); do
   cmd="$(pane_cmd_for_index "$i")"
   tmux split-window -h -t "$SESSION" "$cmd"
   tmux select-layout -t "$SESSION" tiled >/dev/null
 done
 
-tmux attach -t "$SESSION"
+echo "Workers spawned. Attach with: tmux attach -t $SESSION"
