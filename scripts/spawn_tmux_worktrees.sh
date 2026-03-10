@@ -66,8 +66,10 @@ cd "{local_path}"
 git fetch origin
 git worktree add -B "{branch}" "{wt}" "origin/{base}" || (echo "worktree add failed"; exit 2)
 cd "{wt}"
-cp "{gradle_wrapper}" ./.codex-gradle-test.sh
-chmod +x ./.codex-gradle-test.sh
+if [[ -f ./gradlew ]]; then
+  cp "{gradle_wrapper}" ./.codex-gradle-test.sh
+  chmod +x ./.codex-gradle-test.sh
+fi
 codex "$(cat "{packet}")"
 '""")
 PY

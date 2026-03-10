@@ -61,6 +61,7 @@ STOP if not approved.
   - any follow-ups/risks
 
 ## Gradle worktree reliability (Nebula/Grgit)
-- In spawned worktrees, run Gradle tests via `./.codex-gradle-test.sh`.
+- Only for repos that use Gradle, run Gradle tests in spawned worktrees via `./.codex-gradle-test.sh`.
+- The launcher only copies this wrapper when the worktree contains `./gradlew`.
 - This wrapper sets `GRADLE_USER_HOME` inside the worktree and passes `-Pgit.root=<repo-root>` to avoid `nebula.release`/`grgit` failures like `.../config (Is a directory)`.
-- If a packet lists `./gradlew test --tests ...`, execute the same arguments via `./.codex-gradle-test.sh` instead.
+- If a Gradle-based packet lists `./gradlew test --tests ...`, execute the same arguments via `./.codex-gradle-test.sh` instead.

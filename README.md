@@ -55,7 +55,7 @@ Given a Jira issue key, the skill fetches requirements from Jira, identifies lik
 
 ## Notes
 
-- The tmux launcher copies `scripts/codex-gradle-test.sh` into each generated worktree automatically.
+- The tmux launcher copies `scripts/codex-gradle-test.sh` only for worktrees that contain `./gradlew`.
 - This repo should live at `~/.codex/skills/one-shot-this` unless you manage your Codex skills directory differently.
 
 ## Canonical Documentation

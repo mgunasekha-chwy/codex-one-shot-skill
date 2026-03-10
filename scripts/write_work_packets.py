@@ -18,8 +18,8 @@ Implement the approved plan for this repo only.
 ## Tests to run
 {tests}
 
-## Gradle note
-- Run Gradle tests in worktrees using `./.codex-gradle-test.sh` with the same args, for example: `./.codex-gradle-test.sh test --tests '*ProductServiceTest*'`
+## Build tool note
+{build_tool_note}
 
 ## Constraints
 - Only change this repo/worktree.
@@ -36,6 +36,11 @@ def bullet(lines):
     if not lines:
         return "- (none)"
     return "\n".join([f"- {x}" for x in lines])
+
+def build_tool_note(repo_config):
+    if repo_config.get("build_tool") == "gradle":
+        return "- This repo is marked as Gradle-based. In worktrees, run Gradle commands via `./.codex-gradle-test.sh` with the same args."
+    return "- If this repo has a `./gradlew` wrapper in the spawned worktree, use `./.codex-gradle-test.sh` for Gradle commands. Otherwise use the repo's native test/build command."
 
 def main():
     if len(sys.argv) < 3:
@@ -63,7 +68,8 @@ def main():
             repo=repo,
             branch=branch,
             steps=steps,
-            tests=tests
+            tests=tests,
+            build_tool_note=build_tool_note(r),
         )
         (out_dir / f"{repo.replace('/','-')}.md").write_text(content)
 
