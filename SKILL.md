@@ -28,7 +28,8 @@ description: |
 ## Step 3 — Plan
 Output a structured plan with:
 - jira_key
-- repos: list of { name, local_path (if known), branch_suffix, steps[], tests[], rollout_notes }
+- issue_type and/or title when known, so branch type can be inferred
+- repos: list of { name, local_path (if known), branch_suffix, branch_type (optional), steps[], tests[], rollout_notes }
 - cross_repo_steps (if any)
 Then ask for approval:
 "Approve to generate work packets + spawn tmux workers?"
@@ -49,6 +50,7 @@ STOP if not approved.
 - Operate only within its repo/worktree.
 - Implement per packet.
 - Run tests listed in the packet.
+- Branch naming defaults to `feature/<branch_suffix>`. Use `bugfix/<branch_suffix>` only when the story explicitly indicates a bug fix or the plan sets `branch_type: bugfix`.
 - Before any push or PR, explicitly ask:
   "Approve push + PR for <repo>?"
 - If approved:

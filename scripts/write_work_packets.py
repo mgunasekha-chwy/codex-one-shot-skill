@@ -42,6 +42,39 @@ def build_tool_note(repo_config):
         return "- This repo is marked as Gradle-based. In worktrees, run Gradle commands via `./.codex-gradle-test.sh` with the same args."
     return "- If this repo has a `./gradlew` wrapper in the spawned worktree, use `./.codex-gradle-test.sh` for Gradle commands. Otherwise use the repo's native test/build command."
 
+def infer_branch_prefix(plan, repo_config):
+    explicit_value = repo_config.get("branch_type") or plan.get("branch_type")
+    if explicit_value:
+        normalized = str(explicit_value).strip().lower()
+        if normalized in {"bugfix", "bug", "fix", "hotfix"}:
+            return "bugfix"
+        if normalized in {"feature", "feat"}:
+            return "feature"
+
+    explicit_text = " ".join(
+        str(value)
+        for value in (
+            repo_config.get("story_type"),
+            plan.get("story_type"),
+            plan.get("issue_type"),
+            plan.get("title"),
+            plan.get("summary"),
+        )
+        if value
+    ).lower()
+    if re.search(r"\b(bug|bugfix|fix|defect|hotfix|regression)\b", explicit_text):
+        return "bugfix"
+    return "feature"
+
+def branch_name(plan, jira_key, repo_config):
+    explicit_branch = repo_config.get("branch")
+    if explicit_branch:
+        return explicit_branch
+
+    suffix = repo_config.get("branch_suffix") or f"{jira_key}-{repo_config['name']}".replace("/", "-")
+    suffix = str(suffix).strip().lstrip("/")
+    return f"{infer_branch_prefix(plan, repo_config)}/{suffix}"
+
 def main():
     if len(sys.argv) < 3:
         print("Usage: write_work_packets.py <plan_json_path> <out_dir>", file=sys.stderr)
@@ -60,7 +93,7 @@ def main():
 
     for r in repos:
         repo = r["name"]
-        branch = r.get("branch") or f"{jira_key}-{repo}".replace("/", "-")
+        branch = branch_name(plan, jira_key, r)
         steps = bullet(r.get("steps", []))
         tests = bullet(r.get("tests", []))
         content = TEMPLATE.format(

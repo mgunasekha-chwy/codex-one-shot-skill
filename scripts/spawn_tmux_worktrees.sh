@@ -23,20 +23,19 @@ if [[ ! -f "${GRADLE_WRAPPER_SOURCE}" ]]; then
 fi
 
 # Read repos from plan.json (expects repos[].name and optional repos[].local_path and repos[].branch)
-REPOS_JSON="$(python3 - "$PLAN_JSON" <<'PY'
+PLAN_JSON_CONTENT="$(python3 - "$PLAN_JSON" <<'PY'
 import json,sys
-p=json.load(open(sys.argv[1]))
-print(json.dumps(p["repos"]))
+print(json.dumps(json.load(open(sys.argv[1]))))
 PY
 )"
 
 SESSION="codex-${JIRA_KEY}"
 tmux has-session -t "$SESSION" 2>/dev/null && { echo "tmux session $SESSION already exists" >&2; exit 2; }
 
-repo_count="$(python3 - "$REPOS_JSON" <<'PY'
+repo_count="$(python3 - "$PLAN_JSON_CONTENT" <<'PY'
 import json,sys
-a=json.loads(sys.argv[1])
-print(len(a))
+plan=json.loads(sys.argv[1])
+print(len(plan["repos"]))
 PY
 )"
 
@@ -47,14 +46,49 @@ fi
 
 pane_cmd_for_index() {
   local idx="$1"
-  python3 - <<'PY' "$REPOS_JSON" "$idx" "$WORKSPACE_ROOT" "$BASE_BRANCH" "$PACKETS_DIR" "$JIRA_KEY" "$GRADLE_WRAPPER_SOURCE"
-import json,sys,os
-repos=json.loads(sys.argv[1]); i=int(sys.argv[2])
+  python3 - <<'PY' "$PLAN_JSON_CONTENT" "$idx" "$WORKSPACE_ROOT" "$BASE_BRANCH" "$PACKETS_DIR" "$JIRA_KEY" "$GRADLE_WRAPPER_SOURCE"
+import json,sys,os,re
+
+def infer_branch_prefix(plan, repo_config):
+    explicit_value = repo_config.get("branch_type") or plan.get("branch_type")
+    if explicit_value:
+        normalized = str(explicit_value).strip().lower()
+        if normalized in {"bugfix", "bug", "fix", "hotfix"}:
+            return "bugfix"
+        if normalized in {"feature", "feat"}:
+            return "feature"
+
+    explicit_text = " ".join(
+        str(value)
+        for value in (
+            repo_config.get("story_type"),
+            plan.get("story_type"),
+            repo_config.get("issue_type"),
+            plan.get("issue_type"),
+            plan.get("title"),
+            plan.get("summary"),
+        )
+        if value
+    ).lower()
+    if re.search(r"\b(bug|bugfix|fix|defect|hotfix|regression)\b", explicit_text):
+        return "bugfix"
+    return "feature"
+
+def branch_name(plan, repo_config, jira_key):
+    explicit_branch = repo_config.get("branch")
+    if explicit_branch:
+        return explicit_branch
+
+    suffix = repo_config.get("branch_suffix") or f"{jira_key}-{repo_config['name']}".replace("/","-")
+    suffix = str(suffix).strip().lstrip("/")
+    return f"{infer_branch_prefix(plan, repo_config)}/{suffix}"
+
+plan=json.loads(sys.argv[1]); i=int(sys.argv[2])
 workspace=sys.argv[3]; base=sys.argv[4]; packets=sys.argv[5]; jira=sys.argv[6]; gradle_wrapper=sys.argv[7]
-r=repos[i]
+r=plan["repos"][i]
 name=r["name"]
 local_path=r.get("local_path") or os.path.join(workspace, name.split("/")[-1])
-branch=r.get("branch") or f"{jira}-{name}".replace("/","-")
+branch=branch_name(plan, r, jira)
 packet=os.path.join(packets, f"{name.replace('/','-')}.md")
 
 # Worktree location: sibling folder to repo clone
