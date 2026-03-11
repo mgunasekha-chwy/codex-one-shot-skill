@@ -21,6 +21,10 @@ Implement the approved plan for this repo only.
 ## Build tool note
 {build_tool_note}
 
+## Push and PR note
+- When the user gives final approval to push and open a PR, first ensure this local branch has an upstream tracking branch on `origin`.
+- If no upstream exists yet, create the remote branch with the same name and set tracking, for example: `git push -u origin {branch}`.
+
 ## Constraints
 - Only change this repo/worktree.
 - Keep commits small and logical.

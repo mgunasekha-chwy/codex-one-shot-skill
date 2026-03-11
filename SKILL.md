@@ -54,7 +54,8 @@ STOP if not approved.
 - Before any push or PR, explicitly ask:
   "Approve push + PR for <repo>?"
 - If approved:
-  - git push origin <branch>
+  - ensure the current local branch has an upstream tracking branch on `origin`; if it does not, create it with the same branch name
+  - push with upstream tracking when needed (for example `git push -u origin <branch>`)
   - create PR (prefer gh; otherwise print the exact manual command)
 - Report back with:
   - branch name
