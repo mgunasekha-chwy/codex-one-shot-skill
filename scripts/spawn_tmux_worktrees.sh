@@ -11,6 +11,18 @@ GRADLE_WRAPPER_SOURCE="${SCRIPT_DIR}/codex-gradle-test.sh"
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(pwd)}"
 BASE_BRANCH="${BASE_BRANCH:-main}"
 
+abs_path() {
+  local path="$1"
+  if [[ -d "$path" ]]; then
+    (cd "$path" && pwd)
+  else
+    (cd "$(dirname "$path")" && printf "%s/%s\n" "$(pwd)" "$(basename "$path")")
+  fi
+}
+
+PLAN_JSON="$(abs_path "$PLAN_JSON")"
+PACKETS_DIR="$(abs_path "$PACKETS_DIR")"
+
 require() { command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 2; }; }
 require git
 require tmux
@@ -19,6 +31,16 @@ require codex
 
 if [[ ! -f "${GRADLE_WRAPPER_SOURCE}" ]]; then
   echo "Missing helper script: ${GRADLE_WRAPPER_SOURCE}" >&2
+  exit 2
+fi
+
+if [[ ! -f "${PLAN_JSON}" ]]; then
+  echo "Plan file not found: ${PLAN_JSON}" >&2
+  exit 2
+fi
+
+if [[ ! -d "${PACKETS_DIR}" ]]; then
+  echo "Packets directory not found: ${PACKETS_DIR}" >&2
   exit 2
 fi
 
