@@ -120,7 +120,7 @@ print(f"""bash -lc '
 set -e
 cd "{local_path}"
 git fetch origin
-git worktree add -B "{branch}" "{wt}" "origin/{base}" || (echo "worktree add failed"; exit 2)
+git worktree add --no-track -B "{branch}" "{wt}" "origin/{base}" || (echo "worktree add failed"; exit 2)
 cd "{wt}"
 if [[ -f ./gradlew ]]; then
   cp "{gradle_wrapper}" ./.codex-gradle-test.sh

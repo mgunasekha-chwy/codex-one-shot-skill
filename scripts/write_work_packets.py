@@ -22,8 +22,12 @@ Implement the approved plan for this repo only.
 {build_tool_note}
 
 ## Push and PR note
-- When the user gives final approval to push and open a PR, first ensure this local branch has an upstream tracking branch on `origin`.
-- If no upstream exists yet, create the remote branch with the same name and set tracking, for example: `git push -u origin {branch}`.
+- When the user gives final approval to push and open a PR, ensure the current local branch tracks `origin/<current-branch>`.
+- Do not only check whether an upstream exists; it may exist but point to `origin/main` or `origin/master`.
+- A safe generic sequence is:
+  - `branch="$(git branch --show-current)"`
+  - `upstream="$(git for-each-ref --format='%(upstream:short)' "refs/heads/$branch")"`
+  - `if [[ "$upstream" != "origin/$branch" ]]; then git push -u origin "$branch"; fi`
 
 ## Constraints
 - Only change this repo/worktree.
