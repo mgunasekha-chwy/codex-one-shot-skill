@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-JIRA_KEY="${1:?usage: spawn_tmux_worktrees.sh JIRA-123 <plan.json> <packets_dir>}"
-PLAN_JSON="${2:?usage: spawn_tmux_worktrees.sh JIRA-123 <plan.json> <packets_dir>}"
-PACKETS_DIR="${3:?usage: spawn_tmux_worktrees.sh JIRA-123 <plan.json> <packets_dir>}"
+WORKFLOW_DIR="${1:?usage: spawn_tmux_worktrees.sh <workflow_dir> <iteration_dir>}"
+ITERATION_DIR="${2:?usage: spawn_tmux_worktrees.sh <workflow_dir> <iteration_dir>}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GRADLE_WRAPPER_SOURCE="${SCRIPT_DIR}/codex-gradle-test.sh"
+PYTHONPATH="${SCRIPT_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+export PYTHONPATH
 
-WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(pwd)}"
-BASE_BRANCH="${BASE_BRANCH:-main}"
 WORKER_SHELL="${SHELL:-/bin/bash}"
-SHARED_GRADLE_USER_HOME="${WORKSPACE_ROOT}/.gradle-user-home"
-DEFAULT_GRADLE_PROPERTIES_SOURCE="${HOME}/.gradle/gradle.properties"
 
 abs_path() {
   local path="$1"
@@ -23,8 +20,8 @@ abs_path() {
   fi
 }
 
-PLAN_JSON="$(abs_path "$PLAN_JSON")"
-PACKETS_DIR="$(abs_path "$PACKETS_DIR")"
+WORKFLOW_DIR="$(abs_path "$WORKFLOW_DIR")"
+ITERATION_DIR="$(abs_path "$ITERATION_DIR")"
 
 require() { command -v "$1" >/dev/null 2>&1 || { echo "Missing required command: $1" >&2; exit 2; }; }
 require git
@@ -36,113 +33,113 @@ if [[ ! -x "${WORKER_SHELL}" ]]; then
   WORKER_SHELL="/bin/bash"
 fi
 
+if [[ ! -f "${GRADLE_WRAPPER_SOURCE}" ]]; then
+  echo "Missing helper script: ${GRADLE_WRAPPER_SOURCE}" >&2
+  exit 2
+fi
+
+if [[ ! -f "${WORKFLOW_DIR}/workflow_manifest.json" ]]; then
+  echo "Workflow manifest not found: ${WORKFLOW_DIR}/workflow_manifest.json" >&2
+  exit 2
+fi
+
+if [[ ! -f "${ITERATION_DIR}/iteration_manifest.json" ]]; then
+  echo "Iteration manifest not found: ${ITERATION_DIR}/iteration_manifest.json" >&2
+  exit 2
+fi
+
+SESSION="$(python3 - "$WORKFLOW_DIR" "$ITERATION_DIR" <<'PY'
+import sys
+from paper_trail import load_iteration, load_workflow
+workflow_path, workflow = load_workflow(sys.argv[1])
+iteration_path, iteration = load_iteration(sys.argv[2])
+short = workflow["workflow_id"].split("-", 1)[0]
+print(f"codex-{workflow['jira_key']}-{short}-i{iteration['iteration']:03d}")
+PY
+)"
+
+tmux has-session -t "$SESSION" 2>/dev/null && {
+  echo "tmux session already exists: $SESSION" >&2
+  exit 2
+}
+
+repo_count="$(python3 - "$WORKFLOW_DIR" <<'PY'
+import sys
+from paper_trail import load_workflow
+_, workflow = load_workflow(sys.argv[1])
+print(len(workflow.get("repos", [])))
+PY
+)"
+
+if [[ "$repo_count" -lt 1 ]]; then
+  echo "Workflow manifest has no repos; run write_work_packets.py first" >&2
+  exit 2
+fi
+
+SHARED_GRADLE_USER_HOME="$(python3 - "$WORKFLOW_DIR" <<'PY'
+import sys
+from pathlib import Path
+from paper_trail import load_workflow
+_, workflow = load_workflow(sys.argv[1])
+workspace = workflow.get("workspace_root") or workflow.get("invocation_cwd")
+print(Path(workspace) / ".gradle-user-home")
+PY
+)"
+DEFAULT_GRADLE_PROPERTIES_SOURCE="${HOME}/.gradle/gradle.properties"
 mkdir -p "${SHARED_GRADLE_USER_HOME}"
 
 if [[ -f "${DEFAULT_GRADLE_PROPERTIES_SOURCE}" && ! -f "${SHARED_GRADLE_USER_HOME}/gradle.properties" ]]; then
   cp "${DEFAULT_GRADLE_PROPERTIES_SOURCE}" "${SHARED_GRADLE_USER_HOME}/gradle.properties"
 fi
 
-if [[ ! -f "${GRADLE_WRAPPER_SOURCE}" ]]; then
-  echo "Missing helper script: ${GRADLE_WRAPPER_SOURCE}" >&2
-  exit 2
-fi
-
-if [[ ! -f "${PLAN_JSON}" ]]; then
-  echo "Plan file not found: ${PLAN_JSON}" >&2
-  exit 2
-fi
-
-if [[ ! -d "${PACKETS_DIR}" ]]; then
-  echo "Packets directory not found: ${PACKETS_DIR}" >&2
-  exit 2
-fi
-
-# Read repos from plan.json (expects repos[].name and optional repos[].local_path and repos[].branch)
-PLAN_JSON_CONTENT="$(python3 - "$PLAN_JSON" <<'PY'
-import json,sys
-print(json.dumps(json.load(open(sys.argv[1]))))
-PY
-)"
-
-SESSION="codex-${JIRA_KEY}"
-tmux has-session -t "$SESSION" 2>/dev/null && { echo "tmux session $SESSION already exists" >&2; exit 2; }
-
-repo_count="$(python3 - "$PLAN_JSON_CONTENT" <<'PY'
-import json,sys
-plan=json.loads(sys.argv[1])
-print(len(plan["repos"]))
-PY
-)"
-
-if [[ "$repo_count" -lt 1 ]]; then
-  echo "No repos in plan" >&2
-  exit 2
-fi
-
 pane_cmd_for_index() {
   local idx="$1"
-  python3 - <<'PY' "$PLAN_JSON_CONTENT" "$idx" "$WORKSPACE_ROOT" "$BASE_BRANCH" "$JIRA_KEY" "$GRADLE_WRAPPER_SOURCE" "$WORKER_SHELL" "$SHARED_GRADLE_USER_HOME"
-import json,sys,os,re
+  python3 - "$WORKFLOW_DIR" "$idx" "$GRADLE_WRAPPER_SOURCE" "$WORKER_SHELL" "$SHARED_GRADLE_USER_HOME" <<'PY'
+import shlex
+import sys
+from paper_trail import load_workflow
 
-def infer_branch_prefix(plan, repo_config):
-    explicit_value = repo_config.get("branch_type") or plan.get("branch_type")
-    if explicit_value:
-        normalized = str(explicit_value).strip().lower()
-        if normalized in {"bugfix", "bug", "fix", "hotfix"}:
-            return "bugfix"
-        if normalized in {"feature", "feat"}:
-            return "feature"
+_, workflow = load_workflow(sys.argv[1])
+repo = workflow["repos"][int(sys.argv[2])]
+gradle_wrapper = sys.argv[3]
+worker_shell = sys.argv[4]
+shared_gradle_user_home = sys.argv[5]
+base = workflow.get("base_branch", "main")
 
-    explicit_text = " ".join(
-        str(value)
-        for value in (
-            repo_config.get("story_type"),
-            plan.get("story_type"),
-            repo_config.get("issue_type"),
-            plan.get("issue_type"),
-            plan.get("title"),
-            plan.get("summary"),
-        )
-        if value
-    ).lower()
-    if re.search(r"\b(bug|bugfix|fix|defect|hotfix|regression)\b", explicit_text):
-        return "bugfix"
-    return "feature"
+local_path = repo["local_path"]
+worktree_path = repo["worktree_path"]
+branch = repo["branch"]
 
-def branch_name(plan, repo_config, jira_key):
-    explicit_branch = repo_config.get("branch")
-    if explicit_branch:
-        return explicit_branch
-
-    suffix = repo_config.get("branch_suffix") or f"{jira_key}-{repo_config['name']}".replace("/","-")
-    suffix = str(suffix).strip().lstrip("/")
-    return f"{infer_branch_prefix(plan, repo_config)}/{suffix}"
-
-plan=json.loads(sys.argv[1]); i=int(sys.argv[2])
-workspace=sys.argv[3]; base=sys.argv[4]; jira=sys.argv[5]; gradle_wrapper=sys.argv[6]
-worker_shell=sys.argv[7]; shared_gradle_user_home=sys.argv[8]
-r=plan["repos"][i]
-name=r["name"]
-local_path=r.get("local_path") or os.path.join(workspace, name.split("/")[-1])
-branch=branch_name(plan, r, jira)
-
-# Worktree location: sibling folder to repo clone
-wt=os.path.join(os.path.dirname(local_path), f"{os.path.basename(local_path)}-{jira}")
-
-print(f""""{worker_shell}" -lc '
+script = f"""
 set -e
-cd "{local_path}"
+cd {shlex.quote(local_path)}
 git fetch origin
-git worktree add --no-track -B "{branch}" "{wt}" "origin/{base}" || (echo "worktree add failed"; exit 2)
-cd "{wt}"
+if [[ -e {shlex.quote(worktree_path)} ]]; then
+  if ! git -C {shlex.quote(worktree_path)} rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Existing path is not a git worktree: {worktree_path}" >&2
+    exit 2
+  fi
+  actual_branch="$(git -C {shlex.quote(worktree_path)} branch --show-current)"
+  if [[ "$actual_branch" != {shlex.quote(branch)} ]]; then
+    echo "Existing worktree {worktree_path} is on branch $actual_branch, expected {branch}" >&2
+    exit 2
+  fi
+else
+  git worktree add --no-track -B {shlex.quote(branch)} {shlex.quote(worktree_path)} origin/{shlex.quote(base)} || (
+    echo "Failed to create worktree {worktree_path}" >&2
+    exit 2
+  )
+fi
+cd {shlex.quote(worktree_path)}
 if [[ -f ./gradlew ]]; then
-  cp "{gradle_wrapper}" ./.codex-gradle-test.sh
+  cp {shlex.quote(gradle_wrapper)} ./.codex-gradle-test.sh
   chmod +x ./.codex-gradle-test.sh
-  export CODEX_SHARED_GRADLE_USER_HOME="{shared_gradle_user_home}"
+  export CODEX_SHARED_GRADLE_USER_HOME={shlex.quote(shared_gradle_user_home)}
   ./.codex-gradle-test.sh --version
 fi
 exec codex
-'""")
+"""
+print(f"{shlex.quote(worker_shell)} -lc {shlex.quote(script)}")
 PY
 }
 
@@ -162,19 +159,43 @@ done
 sleep 2
 
 for ((i=0; i<repo_count; i++)); do
-  repo_name="$(python3 - "$PLAN_JSON_CONTENT" "$i" <<'PY'
-import json,sys
-plan=json.loads(sys.argv[1])
-repo=plan["repos"][int(sys.argv[2])]["name"]
-print(repo.replace("/","-"))
+  packet_path="$(python3 - "$WORKFLOW_DIR" "$i" <<'PY'
+import sys
+from paper_trail import load_workflow
+_, workflow = load_workflow(sys.argv[1])
+print(workflow["repos"][int(sys.argv[2])]["implementation_packet"])
 PY
 )"
-  packet_path="${PACKETS_DIR}/${repo_name}.md"
-  buffer_name="packet-${JIRA_KEY}-${i}"
+  if [[ ! -f "$packet_path" ]]; then
+    echo "Implementation packet not found: $packet_path" >&2
+    exit 2
+  fi
+  buffer_name="packet-${SESSION}-${i}"
   tmux load-buffer -b "$buffer_name" "$packet_path"
   tmux paste-buffer -b "$buffer_name" -t "${PANE_IDS[$i]}"
   tmux send-keys -t "${PANE_IDS[$i]}" Enter
   tmux delete-buffer -b "$buffer_name"
 done
+
+python3 - "$WORKFLOW_DIR" "$ITERATION_DIR" "$SESSION" "${PANE_IDS[@]}" <<'PY'
+import sys
+from paper_trail import load_iteration, load_workflow, save_iteration, save_workflow, utc_now
+
+workflow_path, workflow = load_workflow(sys.argv[1])
+iteration_path, iteration = load_iteration(sys.argv[2])
+session = {
+    "mode": "implement",
+    "session": sys.argv[3],
+    "iteration": iteration["iteration"],
+    "pane_ids": sys.argv[4:],
+    "created_at": utc_now(),
+}
+workflow.setdefault("sessions", []).append(session)
+workflow["updated_at"] = utc_now()
+iteration["implement_session"] = session
+iteration["updated_at"] = utc_now()
+save_workflow(workflow_path, workflow)
+save_iteration(iteration_path, iteration)
+PY
 
 echo "Workers spawned. Attach with: tmux attach -t $SESSION"

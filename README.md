@@ -39,23 +39,33 @@ Optional environment variables:
 
 ## What It Does
 
-Given a Jira issue key, the skill fetches requirements from Jira, identifies likely impacted repositories via the service catalog, produces a per-repo implementation plan, asks for approval, and then spawns one Codex worker per repo in tmux worktrees.
+Given a Jira issue key, the skill fetches requirements from Jira, identifies likely impacted repositories via the service catalog, produces a per-repo implementation plan, asks for approval, and then starts a paper-trailed implement/review workflow.
+
+The paper trail is organized as:
+
+- `<JIRA_KEY>/`
+- `<JIRA_KEY>/workflow-<UUID>/`
+- `<JIRA_KEY>/workflow-<UUID>/iteration-###/`
+
+Implementation spawns one Codex worker per affected repo. Review spawns one Codex reviewer process that scans all affected repos for that workflow iteration.
 
 ## When To Use It
 
 - You have a Jira issue and need to coordinate changes across one or more repositories.
-- You want a repeatable workflow for repo selection, planning, and parallel worker setup.
-- You want `tmux` worktrees and per-repo work packets generated automatically.
+- You want a repeatable workflow for repo selection, planning, implementation, review, and follow-up implementation iterations.
+- You want `tmux` worktrees, per-repo implementation packets, consolidated review packets, and durable paper-trail manifests generated automatically.
 
 ## Repository Structure
 
 - `SKILL.md`: canonical skill instructions and workflow
 - `agents/openai.yaml`: UI metadata for the skill
-- `scripts/`: helper scripts for packet generation, tmux setup, and Gradle test execution
+- `scripts/`: helper scripts for workflow/iteration manifests, packet generation, tmux setup, review setup, and Gradle test execution
 
 ## Notes
 
 - The tmux launcher copies `scripts/codex-gradle-test.sh` only for worktrees that contain `./gradlew`.
+- Workflow worktrees are reused across iterations and are named with the Jira key plus workflow UUID prefix to avoid same-ticket collisions.
+- Review is intentionally consolidated into one Codex process so cross-repo consistency is evaluated in one pass.
 - The launcher uses `${SHELL}` when present instead of assuming Bash.
 - For Gradle repos, spawned worktrees should use the user's normal Gradle configuration from `~/.gradle` by default.
 - A workspace-specific Gradle configuration may override the default when the launched workspace intentionally provides one.

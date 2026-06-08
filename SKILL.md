@@ -1,59 +1,113 @@
 ---
 name: one-shot-this
 description: |
-  Explicit skill. Given a Jira issue key, fetch requirements via Jira MCP, identify impacted repos via service-catalog MCP,
-  produce a per-repo implementation plan, ask for approval, then spawn one Codex worker per repo in tmux panes using git worktrees.
+  Explicit skill. Given a Jira issue key, orchestrate a paper-trailed implement/review loop across impacted repos using Jira MCP,
+  service-catalog MCP, git worktrees, tmux workers, and per-iteration artifacts.
 ---
 
 # Workflow (must follow exactly)
 
 ## Inputs
-- Jira story key (e.g., CON-7134)
+- Mode and target:
+  - `implement <JIRA_KEY>` starts a new workflow attempt for that Jira ticket.
+  - `implement <WORKFLOW_DIR>` creates the next implementation iteration for an existing workflow.
+  - `review <JIRA_KEY>` finds workflows for that Jira ticket and asks the user to choose when more than one exists.
+  - `review <WORKFLOW_DIR>` reviews the latest implementation iteration for that workflow.
+  - `review <ITERATION_DIR>` reviews that exact iteration.
 - Environment variables (if set):
-  - WORKSPACE_ROOT: folder that contains local clones of repos (default: current directory)
-  - BASE_BRANCH: default base branch for worktrees (default: main)
+  - `WORKSPACE_ROOT`: folder that contains local clones of repos (default: current directory)
+  - `BASE_BRANCH`: default base branch for worktrees (default: main)
 
-## Step 1 — Requirements intake (read-only)
+## Paper trail layout
+- Create paper-trail artifacts in the directory where the skill is invoked.
+- Use this hierarchy:
+  - `<JIRA_KEY>/`
+  - `<JIRA_KEY>/workflow-<UUID>/`
+  - `<JIRA_KEY>/workflow-<UUID>/iteration-###/`
+- A Jira ticket can have many workflow folders. Each workflow is an independent implementation attempt.
+- A workflow can have many iterations. Iterations represent the loop `implement -> review -> implement -> review` until the code is good.
+- Worktrees are workflow-scoped and reused across iterations so fixes build on prior implementation work.
+
+## Artifact contract
+- `<JIRA_KEY>/ticket_manifest.json`: Jira-level index of workflow attempts.
+- `<JIRA_KEY>/workflow-<UUID>/workflow_manifest.json`: workflow ID, Jira key, base branch, repo list, stable worktree paths, branches, current iteration, and tmux session history.
+- `<JIRA_KEY>/workflow-<UUID>/plan.json`: approved implementation plan.
+- `iteration-###/iteration_manifest.json`: iteration number, packet paths, prior review links, review output path, and session metadata.
+- `iteration-###/packets/implement/`: one implementation packet per repo.
+- `iteration-###/packets/review.md`: one consolidated review packet for all affected repos.
+- `iteration-###/reviews/review.md`: consolidated review findings.
+- `iteration-###/summaries/implementation.md`: implementation worker summaries and test results.
+
+## Implement mode: new workflow
+Use for `implement <JIRA_KEY>`.
+
+### Step 1 — Requirements intake (read-only)
 1) Use Jira MCP to fetch:
    - title, description, acceptance criteria, links, attachments
 2) Summarize requirements and list assumptions/questions.
 
-## Step 2 — Repo selection using service catalog (read-only)
+### Step 2 — Repo selection using service catalog (read-only)
 1) Use service-catalog MCP to find impacted repos/services.
 2) Produce a list of repos with:
    - why impacted
    - key modules/files likely touched
    - integration/dependency notes
 
-## Step 3 — Plan
+### Step 3 — Plan
 Output a structured plan with:
-- jira_key
-- issue_type and/or title when known, so branch type can be inferred
-- repos: list of { name, local_path (if known), branch_suffix, branch_type (optional), steps[], tests[], rollout_notes }
-- cross_repo_steps (if any)
+- `jira_key`
+- `issue_type` and/or title when known, so branch type can be inferred
+- `repos`: list of `{ name, local_path (if known), branch_suffix, branch_type (optional), steps[], tests[], rollout_notes }`
+- `cross_repo_steps` (if any)
 Then ask for approval:
-"Approve to generate work packets + spawn tmux workers?"
+`Approve to generate workflow paper trail + implementation workers?`
 
 STOP if not approved.
 
-## Step 4 — Generate work packets + spawn tmux workers
-1) Run scripts/write_work_packets.py to write one markdown packet per repo into ./run/packets/
-2) Run scripts/spawn_tmux_worktrees.sh to:
-   - create a worktree per repo
-   - open a tmux session with one pane per repo
-   - start a Codex session in each pane, feeding it the repo’s packet
-   - note: the launcher canonicalizes `<plan.json>` and `<packets_dir>` to absolute paths, so callers can pass relative paths safely
-3) After spawn succeeds, do not run extra tmux verification commands.
-4) Final response for this step must be a single instruction line:
-   - `tmux attach -t codex-<JIRA_KEY>`
+### Step 4 — Generate workflow, packets, and workers
+1) Run `scripts/init_workflow.py <JIRA_KEY>` to create `<JIRA_KEY>/workflow-<UUID>/iteration-001/`.
+2) Save the approved plan JSON as an input file.
+3) Run `scripts/write_work_packets.py <plan.json> <workflow_dir> <workflow_dir>/iteration-001`.
+4) Run `scripts/spawn_tmux_worktrees.sh <workflow_dir> <workflow_dir>/iteration-001`.
+5) After spawn succeeds, do not run extra tmux verification commands.
+6) Final response for this step must be a single instruction line:
+   - `tmux attach -t codex-<JIRA_KEY>-<shortUUID>-i001`
 
-## Worker rules (each spawned Codex session)
-- Operate only within its repo/worktree.
+## Implement mode: next iteration
+Use for `implement <WORKFLOW_DIR>` after review findings exist.
+
+1) Read `<WORKFLOW_DIR>/workflow_manifest.json`.
+2) Read all prior `iteration-###/reviews/review.md` files.
+3) Run `scripts/next_iteration.py <WORKFLOW_DIR>` to create the next iteration.
+4) Reuse `<WORKFLOW_DIR>/plan.json` as the plan input unless the user explicitly approved a revised plan.
+5) Run `scripts/write_work_packets.py <plan.json> <workflow_dir> <new_iteration_dir>`.
+6) Run `scripts/spawn_tmux_worktrees.sh <workflow_dir> <new_iteration_dir>`.
+7) Final response for this step must be a single instruction line:
+   - `tmux attach -t codex-<JIRA_KEY>-<shortUUID>-i###`
+
+## Review mode
+Use one review process for all affected repos.
+
+1) Resolve the target:
+   - If given a Jira key, find `<JIRA_KEY>/workflow-*` under the invocation directory.
+   - If more than one workflow exists, list them with current iteration and ask the user to choose.
+   - If given a workflow directory, review its latest iteration.
+   - If given an iteration directory, review that exact iteration.
+2) Run `scripts/write_review_packet.py <workflow_dir> [iteration_dir]`.
+3) Run `scripts/spawn_review_tmux.sh <workflow_dir> [iteration_dir]`.
+4) After spawn succeeds, do not run extra tmux verification commands.
+5) Final response for this step must be a single instruction line:
+   - `tmux attach -t codex-review-<JIRA_KEY>-<shortUUID>-i###`
+
+## Implementation worker rules
+- Operate only within the assigned repo/worktree.
 - Implement per packet.
+- Treat prior review findings as required context and do not repeat the same mistakes.
 - Run tests listed in the packet.
 - Branch naming defaults to `feature/<branch_suffix>`. Use `bugfix/<branch_suffix>` only when the story explicitly indicates a bug fix or the plan sets `branch_type: bugfix`.
+- Append a concise summary, tests run, results, and risks to `iteration-###/summaries/implementation.md`.
 - Before any push or PR, explicitly ask:
-  "Approve push + PR for <repo>?"
+  `Approve push + PR for <repo>?`
 - If approved:
   - ensure the current local branch tracks `origin/<current-branch>` (do not only check that some upstream exists)
   - if tracking is missing or points elsewhere (for example `origin/main`), set/fix it by pushing with upstream tracking (for example `git push -u origin <branch>`)
@@ -63,6 +117,30 @@ STOP if not approved.
   - PR link
   - tests run + results
   - any follow-ups/risks
+
+## Review worker rules
+- Review all affected repos in one Codex process.
+- Inspect each repo's implementation diff against the workflow base branch.
+- Read each target repo's `service_description.md` when present and verify nothing violates the service responsibilities or integrations.
+- Validate changes against Jira requirements, the approved plan, implementation packets, and prior review findings.
+- Check coding best practices, maintainability, error handling, integration risks, and cross-repo consistency.
+- Verify unit, integration, and e2e test coverage is adequate for the changed behavior.
+- Run relevant tests when practical; otherwise document exactly what should be run and why it was not run.
+- Do not push or create PRs.
+- Write consolidated findings to `iteration-###/reviews/review.md`, including:
+  - Decision: `approved` or `needs-changes`
+  - Blocking findings
+  - Non-blocking findings
+  - Test coverage assessment
+  - Cross-repo consistency risks
+  - Do-not-repeat guidance for the next implementation iteration
+
+## Existing path handling
+- Workflow creation must retry UUID generation if a workflow directory already exists.
+- Iteration creation must choose the next available `iteration-###` and fail clearly if that exact directory already exists unexpectedly.
+- Worktree creation must gracefully reuse an existing compatible worktree on the expected branch.
+- If the expected worktree path exists but is not a compatible git worktree, fail with a clear message instead of a raw `already exists` error.
+- If a tmux session already exists, fail clearly and print the existing session name.
 
 ## Gradle worktree reliability (Nebula/Grgit)
 - Only for repos that use Gradle, run Gradle tests in spawned worktrees via `./.codex-gradle-test.sh`.
