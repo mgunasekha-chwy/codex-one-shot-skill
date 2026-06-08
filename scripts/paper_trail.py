@@ -46,6 +46,18 @@ def iteration_dir(workflow_path, number):
     return Path(workflow_path) / iteration_name(number)
 
 
+def implementation_output_path(iteration_path, repo_name):
+    return Path(iteration_path) / "summaries" / "repos" / f"{repo_file_name(repo_name)}.md"
+
+
+def implementation_log_path(iteration_path, repo_name):
+    return Path(iteration_path) / "logs" / "implement" / f"{repo_file_name(repo_name)}.log"
+
+
+def review_log_path(iteration_path):
+    return Path(iteration_path) / "logs" / "review.log"
+
+
 def validate_jira_key(jira_key):
     if not re.match(r"^[A-Z][A-Z0-9]+-\d+$", jira_key):
         raise ValueError(f"Invalid Jira key: {jira_key}")
@@ -179,6 +191,8 @@ def create_workflow(root, jira_key, base_branch="main"):
     (iteration_path / "packets").mkdir(exist_ok=True)
     (iteration_path / "reviews").mkdir(exist_ok=True)
     (iteration_path / "summaries").mkdir(exist_ok=True)
+    (iteration_path / "summaries" / "repos").mkdir(parents=True, exist_ok=True)
+    (iteration_path / "logs" / "implement").mkdir(parents=True, exist_ok=True)
 
     workflow_manifest = {
         "jira_key": jira_key,
@@ -203,9 +217,12 @@ def create_workflow(root, jira_key, base_branch="main"):
         "updated_at": utc_now(),
         "previous_reviews": [],
         "implementation_packets": [],
+        "implementation_outputs": [],
+        "implementation_logs": [],
         "review_packet": None,
         "user_feedback": None,
         "review_output": str(iteration_path / "reviews" / "review.md"),
+        "review_log": str(review_log_path(iteration_path)),
         "next_implement_plan": str(iteration_path / "reviews" / "next_implement_plan.json"),
         "implementation_summary": str(iteration_path / "summaries" / "implementation.md"),
     }
@@ -234,6 +251,8 @@ def create_next_iteration(workflow_path):
     (iteration_path / "packets" / "implement").mkdir(parents=True, exist_ok=False)
     (iteration_path / "reviews").mkdir(exist_ok=True)
     (iteration_path / "summaries").mkdir(exist_ok=True)
+    (iteration_path / "summaries" / "repos").mkdir(parents=True, exist_ok=True)
+    (iteration_path / "logs" / "implement").mkdir(parents=True, exist_ok=True)
 
     previous_reviews = []
     for prior in sorted(workflow_path.glob("iteration-[0-9][0-9][0-9]/reviews/review.md")):
@@ -248,9 +267,12 @@ def create_next_iteration(workflow_path):
         "updated_at": utc_now(),
         "previous_reviews": previous_reviews,
         "implementation_packets": [],
+        "implementation_outputs": [],
+        "implementation_logs": [],
         "review_packet": None,
         "user_feedback": None,
         "review_output": str(iteration_path / "reviews" / "review.md"),
+        "review_log": str(review_log_path(iteration_path)),
         "next_implement_plan": str(iteration_path / "reviews" / "next_implement_plan.json"),
         "implementation_summary": str(iteration_path / "summaries" / "implementation.md"),
     }

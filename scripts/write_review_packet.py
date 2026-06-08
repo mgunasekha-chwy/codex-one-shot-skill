@@ -83,7 +83,7 @@ new_iteration="$({next_iteration_script} {workflow_dir_arg})"
 {spawn_implement_script} {workflow_dir_arg} "$new_iteration"
 ```
 
-Then tell the user to attach to the printed implementation tmux session.
+Then tell the user the implementation summary path printed by the launcher.
 """
 
 

@@ -2,7 +2,7 @@
 name: one-shot-this
 description: |
   Explicit skill. Given a Jira issue key, orchestrate a paper-trailed implement/review loop across impacted repos using Jira MCP,
-  service-catalog MCP, git worktrees, tmux workers, and per-iteration artifacts.
+  service-catalog MCP, git worktrees, non-interactive Codex workers, and per-iteration artifacts.
 ---
 
 # Workflow (must follow exactly)
@@ -32,7 +32,7 @@ description: |
 
 ## Artifact contract
 - `<JIRA_KEY>/ticket_manifest.json`: Jira-level index of workflow attempts.
-- `<JIRA_KEY>/workflow-<UUID>/workflow_manifest.json`: workflow ID, Jira key, base branch, repo list, stable worktree paths, branches, current iteration, and tmux session history.
+- `<JIRA_KEY>/workflow-<UUID>/workflow_manifest.json`: workflow ID, Jira key, base branch, repo list, stable worktree paths, branches, current iteration, and worker run history.
 - `<JIRA_KEY>/workflow-<UUID>/plan.json`: approved implementation plan.
 - `iteration-###/iteration_manifest.json`: iteration number, packet paths, prior review links, review output path, and session metadata.
 - `iteration-###/packets/implement/`: one implementation packet per repo.
@@ -40,6 +40,9 @@ description: |
 - `iteration-###/reviews/user_feedback.md`: optional custom review feedback provided by the user.
 - `iteration-###/reviews/review.md`: consolidated review findings.
 - `iteration-###/reviews/next_implement_plan.json`: revised plan produced by review when another implementation iteration is needed.
+- `iteration-###/logs/implement/*.log`: per-repo non-interactive Codex logs.
+- `iteration-###/logs/review.log`: consolidated review log.
+- `iteration-###/summaries/repos/*.md`: per-repo non-interactive Codex final messages.
 - `iteration-###/summaries/implementation.md`: implementation worker summaries and test results.
 
 ## Implement mode: new workflow
@@ -73,9 +76,9 @@ STOP if not approved.
 2) Save the approved plan JSON as an input file.
 3) Run `scripts/write_work_packets.py <plan.json> <workflow_dir> <workflow_dir>/iteration-001`.
 4) Run `scripts/spawn_tmux_worktrees.sh <workflow_dir> <workflow_dir>/iteration-001`.
-5) After spawn succeeds, do not run extra tmux verification commands.
+5) Wait for the non-interactive workers to finish. They must write logs plus `iteration-001/summaries/implementation.md`.
 6) Final response for this step must be a single instruction line:
-   - `tmux attach -t codex-<JIRA_KEY>-<shortUUID>-i001`
+   - `Implementation complete: <workflow_dir>/iteration-001/summaries/implementation.md`
 
 ## Implement mode: next iteration
 Use for `implement <WORKFLOW_DIR>` after review findings exist.
@@ -87,10 +90,10 @@ Use for `implement <WORKFLOW_DIR>` after review findings exist.
 5) Run `scripts/write_work_packets.py <plan.json> <workflow_dir> <new_iteration_dir>`.
 6) Run `scripts/spawn_tmux_worktrees.sh <workflow_dir> <new_iteration_dir>`.
 7) Final response for this step must be a single instruction line:
-   - `tmux attach -t codex-<JIRA_KEY>-<shortUUID>-i###`
+   - `Implementation complete: <new_iteration_dir>/summaries/implementation.md`
 
 ## Review mode
-Use one review process for all affected repos. Review reads the previous implementation iteration, optional user feedback, service descriptions, and coding best practices. If changes are needed, review produces a revised implement plan and asks inside the review tmux session whether to spawn the next implementation iteration.
+Use one review process for all affected repos. Review reads the previous implementation iteration, optional user feedback, service descriptions, and coding best practices. If changes are needed, review produces a revised implement plan and asks inside the review run whether to spawn the next implementation iteration.
 
 1) Resolve the target:
    - If given a Jira key, find `<JIRA_KEY>/workflow-*` under the invocation directory.
@@ -102,9 +105,9 @@ Use one review process for all affected repos. Review reads the previous impleme
    - For ticket-first syntax, normalize to the same target + feedback before running this script.
    - If feedback is long or multiline, write it to a temporary file and use `--feedback-file <path>`.
 4) Run `scripts/spawn_review_tmux.sh <workflow_dir> [iteration_dir]`.
-5) After spawn succeeds, do not run extra tmux verification commands.
+5) Wait for the non-interactive review worker to finish. It must write `reviews/review.md` and `logs/review.log`.
 6) Final response for this step must be a single instruction line:
-   - `tmux attach -t codex-review-<JIRA_KEY>-<shortUUID>-i###`
+   - `Review complete: <iteration_dir>/reviews/review.md`
 
 ## Implementation worker rules
 - Operate only within the assigned repo/worktree.
@@ -134,6 +137,7 @@ Use one review process for all affected repos. Review reads the previous impleme
 - Verify unit, integration, and e2e test coverage is adequate for the changed behavior.
 - Run relevant tests when practical; otherwise document exactly what should be run and why it was not run.
 - Do not push or create PRs.
+- For single-repo workflows, use `codex exec review`; for multi-repo workflows, use plain `codex exec` with the consolidated review packet so one process still reviews all repos together.
 - Write consolidated findings to `iteration-###/reviews/review.md`, including:
   - Decision: `approved` or `needs-changes`
   - Blocking findings
@@ -149,6 +153,7 @@ Use one review process for all affected repos. Review reads the previous impleme
   - `scripts/next_iteration.py <workflow_dir>`
   - `scripts/write_work_packets.py <iteration-###/reviews/next_implement_plan.json> <workflow_dir> <new_iteration_dir>`
   - `scripts/spawn_tmux_worktrees.sh <workflow_dir> <new_iteration_dir>`
+- After the implementation launcher finishes, tell the user the implementation summary path it printed.
 - If the decision is `approved`, do not create a next implementation iteration.
 
 ## Existing path handling
@@ -156,7 +161,7 @@ Use one review process for all affected repos. Review reads the previous impleme
 - Iteration creation must choose the next available `iteration-###` and fail clearly if that exact directory already exists unexpectedly.
 - Worktree creation must gracefully reuse an existing compatible worktree on the expected branch.
 - If the expected worktree path exists but is not a compatible git worktree, fail with a clear message instead of a raw `already exists` error.
-- If a tmux session already exists, fail clearly and print the existing session name.
+- Non-interactive launchers must block until Codex exits and persist output/log artifact paths even when a worker fails.
 
 ## Gradle worktree reliability (Nebula/Grgit)
 - Only for repos that use Gradle, run Gradle tests in spawned worktrees via `./.codex-gradle-test.sh`.

@@ -34,6 +34,9 @@ class PaperTrailTest(unittest.TestCase):
             self.assertEqual(workflow_manifest["current_iteration"], 1)
             self.assertEqual(iteration_manifest["iteration"], 1)
             self.assertIsNone(iteration_manifest["user_feedback"])
+            self.assertEqual(iteration_manifest["implementation_outputs"], [])
+            self.assertEqual(iteration_manifest["implementation_logs"], [])
+            self.assertTrue(iteration_manifest["review_log"].endswith("logs/review.log"))
             self.assertTrue(iteration_manifest["next_implement_plan"].endswith("reviews/next_implement_plan.json"))
 
     def test_create_workflow_retries_uuid_collision(self):
@@ -59,6 +62,9 @@ class PaperTrailTest(unittest.TestCase):
 
             self.assertEqual(iteration.name, "iteration-002")
             self.assertEqual(manifest["previous_reviews"], [str(review.resolve())])
+            self.assertEqual(manifest["implementation_outputs"], [])
+            self.assertEqual(manifest["implementation_logs"], [])
+            self.assertTrue(manifest["review_log"].endswith("logs/review.log"))
 
     def test_write_work_and_review_packets(self):
         with tempfile.TemporaryDirectory() as tmp:
