@@ -47,13 +47,14 @@ The paper trail is organized as:
 - `<JIRA_KEY>/workflow-<UUID>/`
 - `<JIRA_KEY>/workflow-<UUID>/iteration-###/`
 
-Implementation spawns one Codex worker per affected repo. Review spawns one Codex reviewer process that scans all affected repos for that workflow iteration.
+Implementation spawns one Codex worker per affected repo. Review spawns one Codex reviewer process that scans all affected repos for that workflow iteration, accepts optional custom feedback, and produces a revised implement plan when another iteration is needed.
 
 ## When To Use It
 
 - You have a Jira issue and need to coordinate changes across one or more repositories.
 - You want a repeatable workflow for repo selection, planning, implementation, review, and follow-up implementation iterations.
 - You want `tmux` worktrees, per-repo implementation packets, consolidated review packets, and durable paper-trail manifests generated automatically.
+- You want review feedback to accelerate the next `implement -> review` cycle instead of requiring a separate manual replanning step.
 
 ## Repository Structure
 
@@ -66,6 +67,8 @@ Implementation spawns one Codex worker per affected repo. Review spawns one Code
 - The tmux launcher copies `scripts/codex-gradle-test.sh` only for worktrees that contain `./gradlew`.
 - Workflow worktrees are reused across iterations and are named with the Jira key plus workflow UUID prefix to avoid same-ticket collisions.
 - Review is intentionally consolidated into one Codex process so cross-repo consistency is evaluated in one pass.
+- Review can be invoked with custom text, for example `$one-shot-this AGC-126 review "Custom review feedback that should be addressed"`.
+- When review finds blocking issues, it writes `reviews/next_implement_plan.json` and asks in the review tmux session before spawning the next implementation workers.
 - The launcher uses `${SHELL}` when present instead of assuming Bash.
 - For Gradle repos, spawned worktrees should use the user's normal Gradle configuration from `~/.gradle` by default.
 - A workspace-specific Gradle configuration may override the default when the launched workspace intentionally provides one.

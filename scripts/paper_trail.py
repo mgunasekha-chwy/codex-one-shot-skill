@@ -204,7 +204,9 @@ def create_workflow(root, jira_key, base_branch="main"):
         "previous_reviews": [],
         "implementation_packets": [],
         "review_packet": None,
+        "user_feedback": None,
         "review_output": str(iteration_path / "reviews" / "review.md"),
+        "next_implement_plan": str(iteration_path / "reviews" / "next_implement_plan.json"),
         "implementation_summary": str(iteration_path / "summaries" / "implementation.md"),
     }
 
@@ -247,7 +249,9 @@ def create_next_iteration(workflow_path):
         "previous_reviews": previous_reviews,
         "implementation_packets": [],
         "review_packet": None,
+        "user_feedback": None,
         "review_output": str(iteration_path / "reviews" / "review.md"),
+        "next_implement_plan": str(iteration_path / "reviews" / "next_implement_plan.json"),
         "implementation_summary": str(iteration_path / "summaries" / "implementation.md"),
     }
     save_iteration(iteration_path, manifest)
