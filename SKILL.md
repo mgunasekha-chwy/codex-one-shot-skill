@@ -69,5 +69,6 @@ STOP if not approved.
 - The launcher only copies this wrapper when the worktree contains `./gradlew`.
 - When you want a shared Gradle cache/home, start the skill from the directory that should own it. For example, launching from `~/Desktop/code` creates and uses `~/Desktop/code/.gradle-user-home`.
 - The launcher uses `${SHELL}` when present and runs `./.codex-gradle-test.sh --version` before starting Codex in Gradle worktrees.
+- When using a shared Gradle home, the launcher seeds `gradle.properties` from `~/.gradle/gradle.properties` if the shared home does not already have one.
 - This wrapper uses `CODEX_SHARED_GRADLE_USER_HOME` when set, otherwise falls back to a worktree-local `.gradle-user-home`, and always passes `-Pgit.root=<repo-root>` to avoid `nebula.release`/`grgit` failures like `.../config (Is a directory)`.
 - If a Gradle-based packet lists `./gradlew test --tests ...`, execute the same arguments via `./.codex-gradle-test.sh` instead.

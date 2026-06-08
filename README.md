@@ -59,6 +59,7 @@ Given a Jira issue key, the skill fetches requirements from Jira, identifies lik
 - The launcher uses `${SHELL}` when present instead of assuming Bash.
 - Gradle worktrees run `./.codex-gradle-test.sh --version` before Codex starts so environment problems fail early.
 - If you launch the skill from `~/Desktop/code`, it creates and uses `~/Desktop/code/.gradle-user-home` as the shared Gradle user home.
+- When that shared Gradle home is first created, the launcher copies `~/.gradle/gradle.properties` into it if present.
 - This repo should live at `~/.codex/skills/one-shot-this` unless you manage your Codex skills directory differently.
 
 ## Canonical Documentation
