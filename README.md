@@ -56,6 +56,10 @@ Given a Jira issue key, the skill fetches requirements from Jira, identifies lik
 ## Notes
 
 - The tmux launcher copies `scripts/codex-gradle-test.sh` only for worktrees that contain `./gradlew`.
+- The launcher uses `${SHELL}` when present instead of assuming Bash.
+- For Gradle repos, spawned worktrees should use the user's normal Gradle configuration from `~/.gradle` by default.
+- A workspace-specific Gradle configuration may override the default when the launched workspace intentionally provides one.
+- The Gradle wrapper helper exists to make Gradle work safely from git worktrees; it should not require machine-specific tuning to use this skill.
 - This repo should live at `~/.codex/skills/one-shot-this` unless you manage your Codex skills directory differently.
 
 ## Canonical Documentation
