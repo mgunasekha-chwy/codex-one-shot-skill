@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Historical name kept for skill compatibility. This launcher must not create
+# interactive tmux/Codex sessions; workers run to completion through codex exec.
 WORKFLOW_DIR="${1:?usage: spawn_tmux_worktrees.sh <workflow_dir> <iteration_dir>}"
 ITERATION_DIR="${2:?usage: spawn_tmux_worktrees.sh <workflow_dir> <iteration_dir>}"
 

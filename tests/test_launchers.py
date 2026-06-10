@@ -26,6 +26,7 @@ class LauncherTest(unittest.TestCase):
         self.records_dir.mkdir()
         self._write_git_stub()
         self._write_codex_stub()
+        self._write_tmux_stub()
         self.env = os.environ.copy()
         self.env["PYTHONPATH"] = str(SCRIPTS_DIR)
         self.env["PATH"] = f"{self.stub_bin}:{self.env['PATH']}"
@@ -128,6 +129,21 @@ class LauncherTest(unittest.TestCase):
         )
         codex_stub.chmod(0o755)
 
+    def _write_tmux_stub(self):
+        tmux_stub = self.stub_bin / "tmux"
+        tmux_stub.write_text(
+            textwrap.dedent(
+                """\
+                #!/usr/bin/env python3
+                import sys
+
+                print(f"tmux must not be called by non-interactive launchers: {' '.join(sys.argv[1:])}", file=sys.stderr)
+                raise SystemExit(99)
+                """
+            )
+        )
+        tmux_stub.chmod(0o755)
+
     def _write_plan(self, workflow, repos):
         iteration = workflow / "iteration-001"
         plan = {
@@ -217,6 +233,7 @@ class LauncherTest(unittest.TestCase):
             self.assertIn("--ephemeral", record["args"])
             self.assertIn("-C", record["args"])
             self.assertNotIn("review", record["args"])
+            self.assertTrue(record["stdin"].startswith("# Implementation Packet: "))
 
     def test_implementation_launcher_persists_logs_on_failure(self):
         workflow = create_workflow(self.tmp_path, "AGC-124", "main")

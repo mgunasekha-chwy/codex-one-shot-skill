@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Historical name kept for skill compatibility. This launcher must not create
+# interactive tmux/Codex sessions; review runs to completion through codex exec.
 WORKFLOW_DIR="${1:?usage: spawn_review_tmux.sh <workflow_dir> [iteration_dir]}"
 ITERATION_DIR="${2:-}"
 
