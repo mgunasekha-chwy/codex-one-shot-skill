@@ -109,7 +109,7 @@ mkdir -p "$(dirname "$review_output")" "$(dirname "$review_log")"
 
 review_status=0
 if [[ "$repo_count" == "1" ]]; then
-  if codex exec --ephemeral --color never -C "$primary_worktree" -o "$review_output" review --base "$base_branch" - < "$REVIEW_PACKET" > "$review_log" 2>&1; then
+  if codex exec --ephemeral --color never --skip-git-repo-check -C "$primary_worktree" -o "$review_output" review --base "$base_branch" - < "$REVIEW_PACKET" > "$review_log" 2>&1; then
     :
   else
     review_status=$?

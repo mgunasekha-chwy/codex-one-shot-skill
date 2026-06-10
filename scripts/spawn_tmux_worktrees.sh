@@ -144,7 +144,7 @@ while IFS= read -r row; do
     ./.codex-gradle-test.sh --version >/dev/null
   fi
 
-  codex exec --ephemeral --color never -C "$worktree_path" -o "$output_path" - < "$packet_path" > "$log_path" 2>&1 &
+  codex exec --ephemeral --color never --skip-git-repo-check -C "$worktree_path" -o "$output_path" - < "$packet_path" > "$log_path" 2>&1 &
   PIDS+=("$!")
   REPO_NAMES+=("$repo_name")
   OUTPUT_PATHS+=("$output_path")

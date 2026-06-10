@@ -231,6 +231,7 @@ class LauncherTest(unittest.TestCase):
         for record in records:
             self.assertIn("exec", record["args"])
             self.assertIn("--ephemeral", record["args"])
+            self.assertIn("--skip-git-repo-check", record["args"])
             self.assertIn("-C", record["args"])
             self.assertNotIn("review", record["args"])
             self.assertTrue(record["stdin"].startswith("# Implementation Packet: "))
@@ -339,6 +340,7 @@ class LauncherTest(unittest.TestCase):
         self.assertEqual(len(records), 1)
         args = records[0]["args"]
         self.assertEqual(args[0], "exec")
+        self.assertIn("--skip-git-repo-check", args)
         self.assertIn("review", args)
         self.assertIn("--base", args)
         self.assertIn("main", args)
