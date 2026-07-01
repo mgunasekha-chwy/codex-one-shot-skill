@@ -7,6 +7,7 @@ PACKETS_DIR="${3:?usage: spawn_tmux_worktrees.sh JIRA-123 <plan.json> <packets_d
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GRADLE_WRAPPER_SOURCE="${SCRIPT_DIR}/codex-gradle-test.sh"
+PREFLIGHT_SCRIPT="${SCRIPT_DIR}/preflight_repo_change.sh"
 
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(pwd)}"
 BASE_BRANCH="${BASE_BRANCH:-main}"
@@ -47,6 +48,11 @@ if [[ ! -f "${GRADLE_WRAPPER_SOURCE}" ]]; then
   exit 2
 fi
 
+if [[ ! -x "${PREFLIGHT_SCRIPT}" ]]; then
+  echo "Missing or non-executable helper script: ${PREFLIGHT_SCRIPT}" >&2
+  exit 2
+fi
+
 if [[ ! -f "${PLAN_JSON}" ]]; then
   echo "Plan file not found: ${PLAN_JSON}" >&2
   exit 2
@@ -56,6 +62,8 @@ if [[ ! -d "${PACKETS_DIR}" ]]; then
   echo "Packets directory not found: ${PACKETS_DIR}" >&2
   exit 2
 fi
+
+"${PREFLIGHT_SCRIPT}" "$JIRA_KEY" "$PLAN_JSON" "$PACKETS_DIR" multi
 
 # Read repos from plan.json (expects repos[].name and optional repos[].local_path and repos[].branch)
 PLAN_JSON_CONTENT="$(python3 - "$PLAN_JSON" <<'PY'

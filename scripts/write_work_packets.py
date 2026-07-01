@@ -47,8 +47,8 @@ def bullet(lines):
 
 def build_tool_note(repo_config):
     if repo_config.get("build_tool") == "gradle":
-        return "- This repo is marked as Gradle-based. In worktrees, run Gradle commands via `./.codex-gradle-test.sh` with the same args."
-    return "- If this repo has a `./gradlew` wrapper in the spawned worktree, use `./.codex-gradle-test.sh` for Gradle commands. Otherwise use the repo's native test/build command."
+        return "- This repo is marked as Gradle-based. When `./.codex-gradle-test.sh` is present, run Gradle commands through it with the same args."
+    return "- If this repo has a `./.codex-gradle-test.sh` helper, use it for Gradle commands. Otherwise use the repo's native test/build command."
 
 def infer_branch_prefix(plan, repo_config):
     explicit_value = repo_config.get("branch_type") or plan.get("branch_type")
