@@ -46,9 +46,21 @@ def bullet(lines):
     return "\n".join([f"- {x}" for x in lines])
 
 def build_tool_note(repo_config):
+    gradle_note = (
+        "- This repo is Gradle-based. When `./.codex-gradle-test.sh` is present, "
+        "run Gradle commands through it with the same args. If Gradle fails with a "
+        "Java/Gradle version mismatch such as `Unsupported class file major version 65`, "
+        "ask the user for the correct JDK path and retry with "
+        "`CODEX_GRADLE_JAVA_HOME=/path/to/jdk`; Java 21 with older Gradle often needs Java 17."
+    )
     if repo_config.get("build_tool") == "gradle":
-        return "- This repo is marked as Gradle-based. In worktrees, run Gradle commands via `./.codex-gradle-test.sh` with the same args."
-    return "- If this repo has a `./gradlew` wrapper in the spawned worktree, use `./.codex-gradle-test.sh` for Gradle commands. Otherwise use the repo's native test/build command."
+        return gradle_note
+    return (
+        "- If this repo has a `./.codex-gradle-test.sh` helper, use it for Gradle commands. "
+        "Otherwise use the repo's native test/build command. If Gradle fails with a Java/Gradle "
+        "version mismatch, ask the user for the correct JDK path and retry with "
+        "`CODEX_GRADLE_JAVA_HOME=/path/to/jdk`."
+    )
 
 def infer_branch_prefix(plan, repo_config):
     explicit_value = repo_config.get("branch_type") or plan.get("branch_type")

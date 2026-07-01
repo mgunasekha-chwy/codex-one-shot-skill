@@ -7,6 +7,7 @@ PACKETS_DIR="${3:?usage: spawn_tmux_worktrees.sh JIRA-123 <plan.json> <packets_d
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 GRADLE_WRAPPER_SOURCE="${SCRIPT_DIR}/codex-gradle-test.sh"
+PREFLIGHT_SCRIPT="${SCRIPT_DIR}/preflight_repo_change.sh"
 
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(pwd)}"
 BASE_BRANCH="${BASE_BRANCH:-main}"
@@ -47,6 +48,11 @@ if [[ ! -f "${GRADLE_WRAPPER_SOURCE}" ]]; then
   exit 2
 fi
 
+if [[ ! -x "${PREFLIGHT_SCRIPT}" ]]; then
+  echo "Missing or non-executable helper script: ${PREFLIGHT_SCRIPT}" >&2
+  exit 2
+fi
+
 if [[ ! -f "${PLAN_JSON}" ]]; then
   echo "Plan file not found: ${PLAN_JSON}" >&2
   exit 2
@@ -56,6 +62,8 @@ if [[ ! -d "${PACKETS_DIR}" ]]; then
   echo "Packets directory not found: ${PACKETS_DIR}" >&2
   exit 2
 fi
+
+"${PREFLIGHT_SCRIPT}" "$JIRA_KEY" "$PLAN_JSON" "$PACKETS_DIR" multi
 
 # Read repos from plan.json (expects repos[].name and optional repos[].local_path and repos[].branch)
 PLAN_JSON_CONTENT="$(python3 - "$PLAN_JSON" <<'PY'
@@ -81,7 +89,7 @@ fi
 
 pane_cmd_for_index() {
   local idx="$1"
-  python3 - <<'PY' "$PLAN_JSON_CONTENT" "$idx" "$WORKSPACE_ROOT" "$BASE_BRANCH" "$JIRA_KEY" "$GRADLE_WRAPPER_SOURCE" "$WORKER_SHELL" "$SHARED_GRADLE_USER_HOME"
+  python3 - <<'PY' "$PLAN_JSON_CONTENT" "$idx" "$WORKSPACE_ROOT" "$BASE_BRANCH" "$JIRA_KEY" "$GRADLE_WRAPPER_SOURCE" "$WORKER_SHELL" "$SHARED_GRADLE_USER_HOME" "${CODEX_GRADLE_JAVA_HOME:-}"
 import json,sys,os,re
 
 def infer_branch_prefix(plan, repo_config):
@@ -120,14 +128,18 @@ def branch_name(plan, repo_config, jira_key):
 
 plan=json.loads(sys.argv[1]); i=int(sys.argv[2])
 workspace=sys.argv[3]; base=sys.argv[4]; jira=sys.argv[5]; gradle_wrapper=sys.argv[6]
-worker_shell=sys.argv[7]; shared_gradle_user_home=sys.argv[8]
+worker_shell=sys.argv[7]; shared_gradle_user_home=sys.argv[8]; gradle_java_home=sys.argv[9]
 r=plan["repos"][i]
 name=r["name"]
 local_path=r.get("local_path") or os.path.join(workspace, name.split("/")[-1])
 branch=branch_name(plan, r, jira)
+resolved_gradle_java_home=r.get("gradle_java_home") or plan.get("gradle_java_home") or gradle_java_home
 
 # Worktree location: sibling folder to repo clone
 wt=os.path.join(os.path.dirname(local_path), f"{os.path.basename(local_path)}-{jira}")
+java_home_export=""
+if resolved_gradle_java_home:
+    java_home_export=f'  export CODEX_GRADLE_JAVA_HOME="{resolved_gradle_java_home}"\n'
 
 print(f""""{worker_shell}" -lc '
 set -e
@@ -139,7 +151,7 @@ if [[ -f ./gradlew ]]; then
   cp "{gradle_wrapper}" ./.codex-gradle-test.sh
   chmod +x ./.codex-gradle-test.sh
   export CODEX_SHARED_GRADLE_USER_HOME="{shared_gradle_user_home}"
-  ./.codex-gradle-test.sh --version
+{java_home_export.rstrip()}
 fi
 exec codex
 '""")
