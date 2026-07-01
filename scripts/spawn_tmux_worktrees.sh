@@ -89,7 +89,7 @@ fi
 
 pane_cmd_for_index() {
   local idx="$1"
-  python3 - <<'PY' "$PLAN_JSON_CONTENT" "$idx" "$WORKSPACE_ROOT" "$BASE_BRANCH" "$JIRA_KEY" "$GRADLE_WRAPPER_SOURCE" "$WORKER_SHELL" "$SHARED_GRADLE_USER_HOME"
+  python3 - <<'PY' "$PLAN_JSON_CONTENT" "$idx" "$WORKSPACE_ROOT" "$BASE_BRANCH" "$JIRA_KEY" "$GRADLE_WRAPPER_SOURCE" "$WORKER_SHELL" "$SHARED_GRADLE_USER_HOME" "${CODEX_GRADLE_JAVA_HOME:-}"
 import json,sys,os,re
 
 def infer_branch_prefix(plan, repo_config):
@@ -128,7 +128,7 @@ def branch_name(plan, repo_config, jira_key):
 
 plan=json.loads(sys.argv[1]); i=int(sys.argv[2])
 workspace=sys.argv[3]; base=sys.argv[4]; jira=sys.argv[5]; gradle_wrapper=sys.argv[6]
-worker_shell=sys.argv[7]; shared_gradle_user_home=sys.argv[8]
+worker_shell=sys.argv[7]; shared_gradle_user_home=sys.argv[8]; gradle_java_home=sys.argv[9]
 r=plan["repos"][i]
 name=r["name"]
 local_path=r.get("local_path") or os.path.join(workspace, name.split("/")[-1])
@@ -147,7 +147,7 @@ if [[ -f ./gradlew ]]; then
   cp "{gradle_wrapper}" ./.codex-gradle-test.sh
   chmod +x ./.codex-gradle-test.sh
   export CODEX_SHARED_GRADLE_USER_HOME="{shared_gradle_user_home}"
-  ./.codex-gradle-test.sh --version
+  export CODEX_GRADLE_JAVA_HOME="{gradle_java_home}"
 fi
 exec codex
 '""")

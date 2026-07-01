@@ -145,17 +145,35 @@ PY
     chmod +x "${local_path}/.codex-gradle-test.sh"
 
     echo "Running Gradle preflight for ${local_path}: ./.codex-gradle-test.sh ${GRADLE_PREFLIGHT_ARGS}" >&2
-    if ! (
+    preflight_output="$(
+      {
       cd "$local_path"
       export CODEX_SHARED_GRADLE_USER_HOME="$SHARED_GRADLE_USER_HOME"
       # shellcheck disable=SC2086
       ./.codex-gradle-test.sh $GRADLE_PREFLIGHT_ARGS
-    ); then
+      } 2>&1
+    )" || {
+      printf '%s\n' "$preflight_output" >&2
       echo "Configuration error: Gradle preflight failed for ${local_path}." >&2
-      echo "Fix the local Java/Gradle/repo configuration before starting Codex for this change." >&2
-      echo "Override the preflight only when necessary with CODEX_GRADLE_PREFLIGHT_ARGS." >&2
+      if [[ "$preflight_output" == *"Unsupported class file major version 65"* ]]; then
+        echo "Detected Java 21 bytecode/tooling with a Gradle version that cannot parse it." >&2
+        echo "This commonly means Java 21 is running with an older Gradle wrapper." >&2
+        echo "Ask the user for the correct JDK path, then retry with CODEX_GRADLE_JAVA_HOME=/path/to/jdk." >&2
+        echo "For Gradle 7.x repos that target Java 17, retry with CODEX_GRADLE_JAVA_HOME set to a Java 17 JDK." >&2
+      fi
+      echo "Fix the local Java/Gradle/repo configuration before starting Codex workers for this change." >&2
+      echo "Retry with an explicit Java home when needed, for example:" >&2
+      if [[ "$MODE" == "multi" ]]; then
+        printf '  CODEX_GRADLE_JAVA_HOME=/path/to/jdk bash %q %q %q %q\n' \
+          "${SCRIPT_DIR}/spawn_tmux_worktrees.sh" "$JIRA_KEY" "$PLAN_JSON" "$PACKETS_DIR" >&2
+      else
+        printf '  CODEX_GRADLE_JAVA_HOME=/path/to/jdk bash %q %q %q %q single\n' \
+          "${SCRIPT_DIR}/preflight_repo_change.sh" "$JIRA_KEY" "$PLAN_JSON" "$PACKETS_DIR" >&2
+      fi
+      echo "Override the preflight command only when necessary with CODEX_GRADLE_PREFLIGHT_ARGS." >&2
       exit 2
-    fi
+    }
+    printf '%s\n' "$preflight_output" >&2
   fi
 done
 

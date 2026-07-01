@@ -21,7 +21,7 @@ Last verified: 2026-06-08
 - The orchestration contract for a Jira-driven, multi-repo change workflow.
 - The packet format handed to spawned workers, including testing and push/PR constraints.
 - The single-repo current-terminal handoff and multi-repo tmux/git-worktree setup logic.
-- Gradle compatibility and fail-fast preflight behavior for repos that use `./gradlew`.
+- Gradle compatibility, explicit wrapper-scoped Java selection, and fail-fast preflight behavior for repos that use `./gradlew`.
 
 ## Core runtime flow
 1. The skill reads a Jira issue and extracts requirements, acceptance criteria, and related context.
@@ -38,7 +38,7 @@ Last verified: 2026-06-08
 - Local git clones: required so the launcher can create worktrees beside each repo.
 - `tmux`: hosts the parallel worker session for multi-repo changes.
 - `codex`: started inside each tmux pane as the worker runtime.
-- Gradle tooling: used only when a target repo has `./gradlew`, to fail fast on Java/build configuration problems and avoid Nebula/Grgit failures.
+- Gradle tooling: used only when a target repo has `./gradlew`, to fail fast on Java/build configuration problems, honor an explicit `CODEX_GRADLE_JAVA_HOME`, and avoid Nebula/Grgit failures.
 
 ## Internal modules to read first
 - [SKILL.md](/Users/csaba/Desktop/code/codex-one-shot-skill/SKILL.md)
@@ -53,13 +53,15 @@ Last verified: 2026-06-08
 - If `${SHELL}` is invalid, the launcher falls back to `/bin/bash`.
 - The preflight helper pre-creates a shared `.gradle-user-home` under `WORKSPACE_ROOT` and seeds `gradle.properties` from `~/.gradle/gradle.properties` when available.
 - The Gradle wrapper always resolves the git common dir and passes `-Pgit.root=<repo-root>` to keep repo and worktree builds stable.
+- When `CODEX_GRADLE_JAVA_HOME` is set, Gradle Java selection is scoped to the helper process and does not change the user's shell environment.
+- The helper does not scan Gradle files or installed JDKs; if preflight fails with a Java/Gradle mismatch, the controlling Codex session asks the user for the correct JDK path before retrying.
 - The preflight helper exits early when required tools, helper scripts, plan files, packets, repo paths, or Gradle configuration are invalid.
 - The tmux launcher still exits early when tmux session names are invalid or already in use.
 
 ## What usually changes together
 - Changes to the workflow contract in `SKILL.md` often require matching updates to packet generation in `scripts/write_work_packets.py`.
 - Branch naming or worker constraints usually affect both `SKILL.md` and the Python packet template logic.
-- Preflight, worktree spawn behavior, shell setup, or Gradle handling usually affect `scripts/preflight_repo_change.sh`, `scripts/spawn_tmux_worktrees.sh`, and `scripts/codex-gradle-test.sh`.
+- Preflight, worktree spawn behavior, shell setup, Java selection, or Gradle handling usually affect `scripts/preflight_repo_change.sh`, `scripts/spawn_tmux_worktrees.sh`, and `scripts/codex-gradle-test.sh`.
 - If the expected plan JSON shape changes, both helper scripts must stay in sync.
 
 ## How to keep this document evolving

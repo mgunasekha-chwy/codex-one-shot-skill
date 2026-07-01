@@ -14,6 +14,7 @@ description: |
   - WORKSPACE_ROOT: folder that contains local clones of repos (default: current directory)
   - BASE_BRANCH: default base branch for worktrees (default: main)
   - CODEX_GRADLE_PREFLIGHT_ARGS: Gradle preflight args for repos with ./gradlew (default: help)
+  - CODEX_GRADLE_JAVA_HOME: explicit JDK home for Gradle preflight and worker Gradle commands
 
 ## Step 1 — Requirements intake (read-only)
 1) Use Jira MCP to fetch:
@@ -76,11 +77,15 @@ STOP if not approved.
 ## Gradle reliability and fail-fast preflight
 - For repos that use Gradle, run Gradle commands via `./.codex-gradle-test.sh` when the helper is present.
 - Preflight defaults to `./.codex-gradle-test.sh help` so Java, Gradle, plugin, and buildscript configuration errors fail before Codex workers start.
+- The Gradle helper must not scan Gradle files, wrapper properties, or installed JDKs to guess a Java version.
+- If the user supplies `CODEX_GRADLE_JAVA_HOME`, the helper uses that JDK for Gradle only by setting `JAVA_HOME` and prepending `$JAVA_HOME/bin` in the helper process.
+- Known example: `Unsupported class file major version 65` commonly means Java 21 is running with an older Gradle wrapper; ask the user for the correct JDK path, often Java 17 for Gradle 7.x repos that target Java 17.
 - Use `CODEX_GRADLE_PREFLIGHT_ARGS` only when a repo needs a different safe preflight command.
-- If preflight fails, stop immediately and notify the user that local Java/Gradle/repo configuration must be fixed before continuing.
-- The launcher and preflight helper only copy this wrapper when the repo or worktree contains `./gradlew`.
+- If preflight fails, stop immediately, notify the user that local Java/Gradle/repo configuration must be fixed, and ask for the correct `CODEX_GRADLE_JAVA_HOME` before retrying.
+- Never spawn tmux workers when Gradle preflight fails.
+- The launcher and preflight helper only copy the Gradle wrapper helper when the repo or worktree contains `./gradlew`.
 - The launcher uses `${SHELL}` when present instead of assuming Bash.
-- Gradle runs should use the user's normal Gradle configuration from `~/.gradle` by default.
+- Gradle runs should use the user's normal Gradle configuration from `~/.gradle` by default, but explicit Java selection is scoped to the helper process and must not modify the user's shell.
 - A workspace-local Gradle configuration may override the default when the launched workspace intentionally provides one.
 - This wrapper exists to make Gradle run safely from repos and git worktrees and always passes `-Pgit.root=<repo-root>` to avoid `nebula.release`/`grgit` failures like `.../config (Is a directory)`.
 - If a Gradle-based packet lists `./gradlew test --tests ...`, execute the same arguments via `./.codex-gradle-test.sh` instead.
