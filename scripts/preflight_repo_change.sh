@@ -25,7 +25,7 @@ GRADLE_WRAPPER_SOURCE="${SCRIPT_DIR}/codex-gradle-test.sh"
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(pwd)}"
 SHARED_GRADLE_USER_HOME="${CODEX_SHARED_GRADLE_USER_HOME:-${WORKSPACE_ROOT}/.gradle-user-home}"
 DEFAULT_GRADLE_PROPERTIES_SOURCE="${HOME}/.gradle/gradle.properties"
-GRADLE_PREFLIGHT_ARGS="${CODEX_GRADLE_PREFLIGHT_ARGS:-help}"
+GRADLE_PREFLIGHT_ARGS="${CODEX_GRADLE_PREFLIGHT_ARGS:-compileJava}"
 
 abs_path() {
   local path="$1"
@@ -105,6 +105,39 @@ if [[ "$MODE" == "multi" && "$repo_count" -lt 2 ]]; then
   exit 2
 fi
 
+print_gradle_failure_guidance() {
+  local output="$1"
+  echo "Fix the local Java/Gradle/repo configuration before starting Codex workers for this change." >&2
+
+  if [[ "$output" == *"CODEX_GRADLE_JAVA_HOME does not contain an executable bin/java"* ]]; then
+    echo "The configured CODEX_GRADLE_JAVA_HOME is invalid. Point it at a JDK directory that contains bin/java." >&2
+  elif [[ "$output" == *"Unsupported class file major version"* ]]; then
+    echo "Detected Java bytecode/tooling that this Gradle version cannot parse." >&2
+    echo "This commonly means a newer Java is running with an older Gradle wrapper." >&2
+  elif [[ "$output" == *"invalid source release"* || "$output" == *"release version"* || "$output" == *"not supported"* ]]; then
+    echo "Detected a Java source/release level that the active JDK does not support." >&2
+  elif [[ "$output" == *"No matching toolchains"* || "$output" == *"No locally installed toolchains match"* ]]; then
+    echo "Detected a missing Gradle Java toolchain for this repo." >&2
+  fi
+
+  echo "Ask the user for the correct JDK path when needed, then retry with an explicit Java home." >&2
+  echo "For mixed-JDK multi-repo plans, set repos[].gradle_java_home in the plan JSON." >&2
+  echo "A global fallback is still supported with CODEX_GRADLE_JAVA_HOME=/path/to/jdk." >&2
+  echo "Override the preflight command only when necessary with CODEX_GRADLE_PREFLIGHT_ARGS." >&2
+}
+
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/codex-preflight.XXXXXX")"
+cleanup() {
+  rm -rf "$TMP_DIR"
+}
+trap cleanup EXIT
+
+declare -a GRADLE_REPO_PATHS=()
+declare -a GRADLE_REPO_JAVA_HOMES=()
+declare -a GRADLE_OUTPUT_FILES=()
+declare -a GRADLE_PIDS=()
+declare -a GRADLE_STATUSES=()
+
 for ((i=0; i<repo_count; i++)); do
   repo_info="$(python3 - "$PLAN_JSON_CONTENT" "$i" "$WORKSPACE_ROOT" <<'PY'
 import json
@@ -117,12 +150,15 @@ repo = plan["repos"][i]
 name = repo["name"]
 local_path = repo.get("local_path") or os.path.join(workspace, name.split("/")[-1])
 packet_name = name.replace("/", "-") + ".md"
+gradle_java_home = repo.get("gradle_java_home") or plan.get("gradle_java_home") or ""
 print(local_path)
 print(packet_name)
+print(gradle_java_home)
 PY
 )"
   local_path="$(printf '%s\n' "$repo_info" | sed -n '1p')"
   packet_name="$(printf '%s\n' "$repo_info" | sed -n '2p')"
+  gradle_java_home="$(printf '%s\n' "$repo_info" | sed -n '3p')"
   packet_path="${PACKETS_DIR}/${packet_name}"
 
   if [[ ! -d "$local_path" ]]; then
@@ -144,38 +180,66 @@ PY
     cp "$GRADLE_WRAPPER_SOURCE" "${local_path}/.codex-gradle-test.sh"
     chmod +x "${local_path}/.codex-gradle-test.sh"
 
-    echo "Running Gradle preflight for ${local_path}: ./.codex-gradle-test.sh ${GRADLE_PREFLIGHT_ARGS}" >&2
-    preflight_output="$(
-      {
-      cd "$local_path"
-      export CODEX_SHARED_GRADLE_USER_HOME="$SHARED_GRADLE_USER_HOME"
-      # shellcheck disable=SC2086
-      ./.codex-gradle-test.sh $GRADLE_PREFLIGHT_ARGS
-      } 2>&1
-    )" || {
-      printf '%s\n' "$preflight_output" >&2
-      echo "Configuration error: Gradle preflight failed for ${local_path}." >&2
-      if [[ "$preflight_output" == *"Unsupported class file major version 65"* ]]; then
-        echo "Detected Java 21 bytecode/tooling with a Gradle version that cannot parse it." >&2
-        echo "This commonly means Java 21 is running with an older Gradle wrapper." >&2
-        echo "Ask the user for the correct JDK path, then retry with CODEX_GRADLE_JAVA_HOME=/path/to/jdk." >&2
-        echo "For Gradle 7.x repos that target Java 17, retry with CODEX_GRADLE_JAVA_HOME set to a Java 17 JDK." >&2
-      fi
-      echo "Fix the local Java/Gradle/repo configuration before starting Codex workers for this change." >&2
-      echo "Retry with an explicit Java home when needed, for example:" >&2
-      if [[ "$MODE" == "multi" ]]; then
-        printf '  CODEX_GRADLE_JAVA_HOME=/path/to/jdk bash %q %q %q %q\n' \
-          "${SCRIPT_DIR}/spawn_tmux_worktrees.sh" "$JIRA_KEY" "$PLAN_JSON" "$PACKETS_DIR" >&2
-      else
-        printf '  CODEX_GRADLE_JAVA_HOME=/path/to/jdk bash %q %q %q %q single\n' \
-          "${SCRIPT_DIR}/preflight_repo_change.sh" "$JIRA_KEY" "$PLAN_JSON" "$PACKETS_DIR" >&2
-      fi
-      echo "Override the preflight command only when necessary with CODEX_GRADLE_PREFLIGHT_ARGS." >&2
-      exit 2
-    }
+    GRADLE_REPO_PATHS+=("$local_path")
+    GRADLE_REPO_JAVA_HOMES+=("$gradle_java_home")
+  fi
+done
+
+for ((i=0; i<${#GRADLE_REPO_PATHS[@]}; i++)); do
+  local_path="${GRADLE_REPO_PATHS[$i]}"
+  gradle_java_home="${GRADLE_REPO_JAVA_HOMES[$i]}"
+  output_file="${TMP_DIR}/gradle-${i}.log"
+  GRADLE_OUTPUT_FILES+=("$output_file")
+
+  echo "Running Gradle preflight for ${local_path}: ./.codex-gradle-test.sh ${GRADLE_PREFLIGHT_ARGS}" >&2
+  (
+    cd "$local_path"
+    export CODEX_SHARED_GRADLE_USER_HOME="$SHARED_GRADLE_USER_HOME"
+    if [[ -n "$gradle_java_home" ]]; then
+      export CODEX_GRADLE_JAVA_HOME="$gradle_java_home"
+    fi
+    # shellcheck disable=SC2086
+    ./.codex-gradle-test.sh $GRADLE_PREFLIGHT_ARGS
+  ) >"$output_file" 2>&1 &
+  GRADLE_PIDS+=("$!")
+done
+
+preflight_failed=0
+for ((i=0; i<${#GRADLE_PIDS[@]}; i++)); do
+  if ! wait "${GRADLE_PIDS[$i]}"; then
+    GRADLE_STATUSES[$i]=1
+    preflight_failed=1
+  else
+    GRADLE_STATUSES[$i]=0
+  fi
+done
+
+for ((i=0; i<${#GRADLE_REPO_PATHS[@]}; i++)); do
+  local_path="${GRADLE_REPO_PATHS[$i]}"
+  output_file="${GRADLE_OUTPUT_FILES[$i]}"
+  preflight_output="$(cat "$output_file")"
+  if [[ -n "$preflight_output" ]]; then
     printf '%s\n' "$preflight_output" >&2
   fi
 done
+
+if [[ "$preflight_failed" -ne 0 ]]; then
+  for ((i=0; i<${#GRADLE_REPO_PATHS[@]}; i++)); do
+    if [[ "${GRADLE_STATUSES[$i]}" -eq 0 ]]; then
+      continue
+    fi
+    output_file="${GRADLE_OUTPUT_FILES[$i]}"
+    if [[ -s "$output_file" ]]; then
+      preflight_output="$(cat "$output_file")"
+    else
+      preflight_output=""
+    fi
+    local_path="${GRADLE_REPO_PATHS[$i]}"
+    echo "Configuration error: Gradle preflight failed for ${local_path}." >&2
+    print_gradle_failure_guidance "$preflight_output"
+  done
+  exit 2
+fi
 
 if [[ "$MODE" == "single" ]]; then
   python3 - "$PLAN_JSON_CONTENT" "$WORKSPACE_ROOT" "$PACKETS_DIR" <<'PY'

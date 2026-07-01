@@ -13,8 +13,8 @@ description: |
 - Environment variables (if set):
   - WORKSPACE_ROOT: folder that contains local clones of repos (default: current directory)
   - BASE_BRANCH: default base branch for worktrees (default: main)
-  - CODEX_GRADLE_PREFLIGHT_ARGS: Gradle preflight args for repos with ./gradlew (default: help)
-  - CODEX_GRADLE_JAVA_HOME: explicit JDK home for Gradle preflight and worker Gradle commands
+  - CODEX_GRADLE_PREFLIGHT_ARGS: Gradle preflight args for repos with ./gradlew (default: compileJava)
+  - CODEX_GRADLE_JAVA_HOME: explicit global JDK home for Gradle preflight and worker Gradle commands
 
 ## Step 1 — Requirements intake (read-only)
 1) Use Jira MCP to fetch:
@@ -76,13 +76,17 @@ STOP if not approved.
 
 ## Gradle reliability and fail-fast preflight
 - For repos that use Gradle, run Gradle commands via `./.codex-gradle-test.sh` when the helper is present.
-- Preflight defaults to `./.codex-gradle-test.sh help` so Java, Gradle, plugin, and buildscript configuration errors fail before Codex workers start.
+- Preflight defaults to `./.codex-gradle-test.sh compileJava` so Java, Gradle, plugin, buildscript, and main-source compilation errors fail before Codex workers start.
 - The Gradle helper must not scan Gradle files, wrapper properties, or installed JDKs to guess a Java version.
-- If the user supplies `CODEX_GRADLE_JAVA_HOME`, the helper uses that JDK for Gradle only by setting `JAVA_HOME` and prepending `$JAVA_HOME/bin` in the helper process.
+- By default, use the environment inherited from the shell that launched the skill.
+- If a plan repo supplies `gradle_java_home`, use that JDK for that repo's Gradle preflight and worker commands.
+- If the user supplies `CODEX_GRADLE_JAVA_HOME`, use it as a global fallback for Gradle repos without `gradle_java_home`.
+- Explicit Java selection is Gradle-scoped only: the helper sets `JAVA_HOME` and prepends `$JAVA_HOME/bin` in the helper process.
 - Known example: `Unsupported class file major version 65` commonly means Java 21 is running with an older Gradle wrapper; ask the user for the correct JDK path, often Java 17 for Gradle 7.x repos that target Java 17.
 - Use `CODEX_GRADLE_PREFLIGHT_ARGS` only when a repo needs a different safe preflight command.
 - If preflight fails, stop immediately, notify the user that local Java/Gradle/repo configuration must be fixed, and ask for the correct `CODEX_GRADLE_JAVA_HOME` before retrying.
 - Never spawn tmux workers when Gradle preflight fails.
+- For multi-repo plans, run Gradle preflight checks in parallel before creating tmux workers.
 - The launcher and preflight helper only copy the Gradle wrapper helper when the repo or worktree contains `./gradlew`.
 - The launcher uses `${SHELL}` when present instead of assuming Bash.
 - Gradle runs should use the user's normal Gradle configuration from `~/.gradle` by default, but explicit Java selection is scoped to the helper process and must not modify the user's shell.

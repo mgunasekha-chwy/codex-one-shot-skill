@@ -133,9 +133,13 @@ r=plan["repos"][i]
 name=r["name"]
 local_path=r.get("local_path") or os.path.join(workspace, name.split("/")[-1])
 branch=branch_name(plan, r, jira)
+resolved_gradle_java_home=r.get("gradle_java_home") or plan.get("gradle_java_home") or gradle_java_home
 
 # Worktree location: sibling folder to repo clone
 wt=os.path.join(os.path.dirname(local_path), f"{os.path.basename(local_path)}-{jira}")
+java_home_export=""
+if resolved_gradle_java_home:
+    java_home_export=f'  export CODEX_GRADLE_JAVA_HOME="{resolved_gradle_java_home}"\n'
 
 print(f""""{worker_shell}" -lc '
 set -e
@@ -147,7 +151,7 @@ if [[ -f ./gradlew ]]; then
   cp "{gradle_wrapper}" ./.codex-gradle-test.sh
   chmod +x ./.codex-gradle-test.sh
   export CODEX_SHARED_GRADLE_USER_HOME="{shared_gradle_user_home}"
-  export CODEX_GRADLE_JAVA_HOME="{gradle_java_home}"
+{java_home_export.rstrip()}
 fi
 exec codex
 '""")

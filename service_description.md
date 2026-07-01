@@ -21,7 +21,7 @@ Last verified: 2026-06-08
 - The orchestration contract for a Jira-driven, multi-repo change workflow.
 - The packet format handed to spawned workers, including testing and push/PR constraints.
 - The single-repo current-terminal handoff and multi-repo tmux/git-worktree setup logic.
-- Gradle compatibility, explicit wrapper-scoped Java selection, and fail-fast preflight behavior for repos that use `./gradlew`.
+- Gradle compatibility, optional per-repo wrapper-scoped Java selection, and fail-fast preflight behavior for repos that use `./gradlew`.
 
 ## Core runtime flow
 1. The skill reads a Jira issue and extracts requirements, acceptance criteria, and related context.
@@ -38,7 +38,7 @@ Last verified: 2026-06-08
 - Local git clones: required so the launcher can create worktrees beside each repo.
 - `tmux`: hosts the parallel worker session for multi-repo changes.
 - `codex`: started inside each tmux pane as the worker runtime.
-- Gradle tooling: used only when a target repo has `./gradlew`, to fail fast on Java/build configuration problems, honor an explicit `CODEX_GRADLE_JAVA_HOME`, and avoid Nebula/Grgit failures.
+- Gradle tooling: used only when a target repo has `./gradlew`, to fail fast on Java/build configuration problems, honor optional per-repo or global Java overrides, and avoid Nebula/Grgit failures.
 
 ## Internal modules to read first
 - [SKILL.md](/Users/csaba/Desktop/code/codex-one-shot-skill/SKILL.md)
@@ -52,9 +52,11 @@ Last verified: 2026-06-08
 - The helper scripts canonicalize plan and packets paths so callers can pass relative paths safely.
 - If `${SHELL}` is invalid, the launcher falls back to `/bin/bash`.
 - The preflight helper pre-creates a shared `.gradle-user-home` under `WORKSPACE_ROOT` and seeds `gradle.properties` from `~/.gradle/gradle.properties` when available.
+- Gradle preflight defaults to `compileJava` and runs in parallel for multi-repo plans before tmux workers are created.
 - The Gradle wrapper always resolves the git common dir and passes `-Pgit.root=<repo-root>` to keep repo and worktree builds stable.
-- When `CODEX_GRADLE_JAVA_HOME` is set, Gradle Java selection is scoped to the helper process and does not change the user's shell environment.
-- The helper does not scan Gradle files or installed JDKs; if preflight fails with a Java/Gradle mismatch, the controlling Codex session asks the user for the correct JDK path before retrying.
+- Gradle Java selection defaults to the launcher shell environment, can be set per repo with `gradle_java_home`, and can fall back to global `CODEX_GRADLE_JAVA_HOME`.
+- Explicit Gradle Java selection is scoped to the helper process and does not change the user's shell environment.
+- The helper does not scan Gradle files or installed JDKs; if preflight fails with a known Java/Gradle mismatch, the controlling Codex session asks the user for the correct JDK path before retrying.
 - The preflight helper exits early when required tools, helper scripts, plan files, packets, repo paths, or Gradle configuration are invalid.
 - The tmux launcher still exits early when tmux session names are invalid or already in use.
 
